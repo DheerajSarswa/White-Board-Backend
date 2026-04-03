@@ -3,6 +3,7 @@ const express = require("express");
 const cors = require("cors");
 const connectToDatabase = require("./db");
 const userRoute = require("./routes/userRoute");
+const canvasRoute = require("./routes/canvasRoute");
 
 const app = express();
 connectToDatabase();
@@ -10,8 +11,11 @@ connectToDatabase();
 app.use(cors());
 app.use(express.json());
 
-app.use("/users", userRoute);
+app.use("/api/users", userRoute);
 
-app.listen(3030, () => {
-  console.log("Serever is running on port-3030");
+app.use("/api/canvases", canvasRoute);
+
+const PORT = process.env.PORT;
+app.listen(PORT, () => {
+  console.log(`Serever is running on port-${PORT}`);
 });

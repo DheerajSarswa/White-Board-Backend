@@ -1,4 +1,3 @@
-console.log("DEBUG: Your URI is:", process.env.MONGODB_URI);
 const mongoose = require("mongoose");
 
 const connectionString = process.env.MONGODB_URI;
