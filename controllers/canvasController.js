@@ -25,7 +25,6 @@ const createCanvas = async (req, res) => {
     const {
       name = "Untitled Canvas",
       elements = [],
-      thumbnail = "",
       shared_with = [],
     } = req.body;
 
@@ -33,7 +32,6 @@ const createCanvas = async (req, res) => {
       name,
       email,
       elements,
-      thumbnail,
       shared_with,
     });
 
@@ -73,11 +71,10 @@ const updateCanvas = async (req, res) => {
   try {
     const { id } = req.params;
     const email = req.email;
-    const { elements, thumbnail } = req.body;
+    const { elements } = req.body;
 
     const updatedCanvas = await Canvas.updateCanvas(id, email, {
       elements,
-      thumbnail,
     });
 
     res.status(200).json({

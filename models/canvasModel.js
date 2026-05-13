@@ -22,10 +22,6 @@ const canvasSchema = new mongoose.Schema(
         ref: "Users",
       },
     ],
-    thumbnail: {
-      type: String,
-      default: "",
-    },
     lastViewedAt: {
       type: Date,
       default: Date.now,
@@ -45,9 +41,7 @@ canvasSchema.statics.getAllCanvases = async function (email) {
 
     const canvases = await this.find({
       $or: [{ owner: user._id }, { shared_with: user._id }],
-    })
-      .select("-elements")
-      .sort({ lastViewedAt: -1 });
+    }).sort({ lastViewedAt: -1 });
 
     return canvases;
   } catch (error) {
@@ -57,7 +51,7 @@ canvasSchema.statics.getAllCanvases = async function (email) {
 };
 
 canvasSchema.statics.createCanvas = async function (data) {
-  const { name, email, elements, thumbnail, shared_with } = data;
+  const { name, email, elements, shared_with } = data;
 
   try {
     const User = mongoose.model("Users");
@@ -71,7 +65,6 @@ canvasSchema.statics.createCanvas = async function (data) {
       name: name || "Untitled Canvas",
       owner: user._id,
       elements: elements || [],
-      thumbnail: thumbnail || "",
       shared_with: shared_with || [],
       lastViewedAt: new Date(),
     });
@@ -112,7 +105,7 @@ canvasSchema.statics.loadCanvas = async function (id, email) {
 };
 
 canvasSchema.statics.updateCanvas = async function (id, email, data) {
-  const { elements, thumbnail } = data;
+  const { elements } = data;
 
   try {
     const User = mongoose.model("Users");
@@ -129,8 +122,6 @@ canvasSchema.statics.updateCanvas = async function (id, email, data) {
         "Canvas not found or you do not have permission to edit.",
       );
     }
-
-    canvas.thumbnail = thumbnail;
 
     canvas.elements = elements;
     canvas.markModified("elements");
