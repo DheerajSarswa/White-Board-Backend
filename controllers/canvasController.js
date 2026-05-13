@@ -90,6 +90,34 @@ const updateCanvas = async (req, res) => {
   }
 };
 
+const shareCanvas = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const email = req.email;
+    const { sharedWithEmail } = req.body;
+
+    if (!sharedWithEmail) {
+      return res.status(400).json({
+        success: false,
+        message: "sharedWithEmail is required.",
+      });
+    }
+
+    const canvas = await Canvas.shareCanvas(email, id, sharedWithEmail);
+
+    res.status(200).json({
+      success: true,
+      message: "Canvas shared successfully",
+      canvas,
+    });
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
 const deleteCanvas = async (req, res) => {
   try {
     const { id } = req.params;
@@ -114,5 +142,6 @@ module.exports = {
   createCanvas,
   loadCanvas,
   updateCanvas,
+  shareCanvas,
   deleteCanvas,
 };

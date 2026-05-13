@@ -135,6 +135,50 @@ canvasSchema.statics.updateCanvas = async function (id, email, data) {
   }
 };
 
+canvasSchema.statics.shareCanvas = async function (
+  email,
+  canvasId,
+  sharedWithEmail,
+) {
+  try {
+    const User = mongoose.model("Users");
+
+    const ownerUser = await User.findOne({ email });
+    if (!ownerUser) {
+      throw new Error("Owner user not found.");
+    }
+
+    const sharedWithUser = await User.findOne({ email: sharedWithEmail });
+    if (!sharedWithUser) {
+      throw new Error("Shared-with user not found.");
+    }
+
+    const canvas = await this.findOne({
+      _id: canvasId,
+      owner: ownerUser._id,
+    });
+
+    if (!canvas) {
+      throw new Error(
+        "Canvas not found or you do not have permission to share this canvas.",
+      );
+    }
+
+    if (canvas.owner.equals(sharedWithUser._id)) {
+      throw new Error("Cannot share canvas with its owner.");
+    }
+
+    if (!canvas.shared_with.some((id) => id.equals(sharedWithUser._id))) {
+      canvas.shared_with.push(sharedWithUser._id);
+      await canvas.save();
+    }
+
+    return canvas;
+  } catch (error) {
+    throw error;
+  }
+};
+
 canvasSchema.statics.deleteCanvas = async function (id, email) {
   try {
     const User = mongoose.model("Users");
