@@ -1,4 +1,5 @@
 const Canvas = require("../models/canvasModel");
+const { getIo } = require("../utils/socketManager");
 
 const getAllCanvases = async (req, res) => {
   try {
@@ -77,6 +78,15 @@ const updateCanvas = async (req, res) => {
       elements,
     });
 
+    const io = getIo();
+    if (io) {
+      io.to(id).emit("canvas-updated", {
+        elements: updatedCanvas.elements,
+        updatedBy: email,
+        timestamp: new Date(),
+      });
+    }
+
     res.status(200).json({
       success: true,
       message: "Canvas updated successfully",
@@ -104,6 +114,15 @@ const shareCanvas = async (req, res) => {
     }
 
     const canvas = await Canvas.shareCanvas(email, id, sharedWithEmail);
+
+    const io = getIo();
+    if (io) {
+      io.to(id).emit("canvas-shared", {
+        sharedWith: sharedWithEmail,
+        sharedBy: email,
+        timestamp: new Date(),
+      });
+    }
 
     res.status(200).json({
       success: true,
