@@ -1,206 +1,66 @@
 const mongoose = require("mongoose");
-
-const canvasSchema = new mongoose.Schema(
-  {
-    name: {
-      type: String,
-      required: true,
-      trim: true,
-      default: "Untitled Canvas",
-    },
-    owner: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Users",
-      required: true,
-    },
-    elements: {
-      type: [{ type: mongoose.Schema.Types.Mixed }],
-    },
-    shared_with: [
-      {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "Users",
-      },
-    ],
-    lastViewedAt: {
-      type: Date,
-      default: Date.now,
-    },
-  },
-  { timestamps: true, collection: "Canvas" },
-);
-
+const { AppError } = require("../utils/errors");
+const { validateId, validateName, validateEmail, validateElements } = require("../utils/validation");
+const canvasSchema = new mongoose.Schema({
+  name: { type: String, required: true, trim: true, default: "Untitled Canvas", maxLength: 200 },
+  owner: { type: mongoose.Schema.Types.ObjectId, ref: "Users", required: true },
+  elements: { type: [mongoose.Schema.Types.Mixed], default: [] },
+  shared_with: [{ type: mongoose.Schema.Types.ObjectId, ref: "Users" }],
+  lastViewedAt: { type: Date, default: Date.now },
+}, { timestamps: true, collection: "Canvas" });
+const getUser = (email) => mongoose.model("Users").getUser(email);
+const accessFilter = (id, userId) => ({ _id: id, $or: [{ owner: userId }, { shared_with: userId }] });
+const requireCanvas = (canvas) => {
+  if (!canvas) throw new AppError(403, "Canvas not found or access denied");
+  return canvas;
+};
 canvasSchema.statics.getAllCanvases = async function (email) {
-  try {
-    const User = mongoose.model("Users");
-    const user = await User.findOne({ email });
-
-    if (!user) {
-      throw new Error("User not found. Cannot fetch canvases.");
-    }
-
-    const canvases = await this.find({
-      $or: [{ owner: user._id }, { shared_with: user._id }],
-    }).sort({ lastViewedAt: -1 });
-
-    return canvases;
-  } catch (error) {
-    console.error("Error in getAllCanvases :", error.message);
-    throw new Error("An error occurred while retrieving canvases.");
-  }
+  const user = await getUser(email);
+  return this.find({ $or: [{ owner: user._id }, { shared_with: user._id }] }).sort({ lastViewedAt: -1 });
 };
-
-canvasSchema.statics.createCanvas = async function (data) {
-  const { name, email, elements, shared_with } = data;
-
-  try {
-    const User = mongoose.model("Users");
-    const user = await User.findOne({ email });
-
-    if (!user) {
-      throw new Error("User not found. A canvas must have a valid owner.");
-    }
-
-    const newCanvas = await this.create({
-      name: name || "Untitled Canvas",
-      owner: user._id,
-      elements: elements || [],
-      shared_with: shared_with || [],
-      lastViewedAt: new Date(),
-    });
-
-    return newCanvas;
-  } catch (error) {
-    throw error;
-  }
+canvasSchema.statics.createCanvas = async function ({ name = "Untitled Canvas", email, elements = [] }) {
+  const validName = validateName(name);
+  const validElements = validateElements(elements);
+  const user = await getUser(email);
+  // Sharing always goes through the owner-checked share endpoint.
+  return this.create({ name: validName, owner: user._id, elements: validElements, shared_with: [] });
 };
-
+canvasSchema.statics.authorizeCanvas = async function (id, email) {
+  validateId(id);
+  const user = await getUser(email);
+  return requireCanvas(await this.findOne(accessFilter(id, user._id)).select("_id owner shared_with"));
+};
 canvasSchema.statics.loadCanvas = async function (id, email) {
-  try {
-    const User = mongoose.model("Users");
-    const user = await User.findOne({ email });
-
-    if (!user) {
-      throw new Error("User not found.");
-    }
-
-    const canvas = await this.findOne({
-      _id: id,
-      $or: [{ owner: user._id }, { shared_with: user._id }],
-    });
-
-    if (!canvas) {
-      throw new Error(
-        "Canvas not found or you do not have permission to view it.",
-      );
-    }
-
-    canvas.lastViewedAt = Date.now();
-    await canvas.save();
-
-    return canvas;
-  } catch (error) {
-    throw error;
-  }
+  validateId(id);
+  const user = await getUser(email);
+  return requireCanvas(await this.findOneAndUpdate(accessFilter(id, user._id),
+    { $set: { lastViewedAt: new Date() } }, { returnDocument: "after" }));
 };
-
-canvasSchema.statics.updateCanvas = async function (id, email, data) {
-  const { elements } = data;
-
-  try {
-    const User = mongoose.model("Users");
-    const user = await User.findOne({ email });
-    if (!user) throw new Error("User not found");
-
-    const canvas = await this.findOne({
-      _id: id,
-      $or: [{ owner: user._id }, { shared_with: user._id }],
-    });
-
-    if (!canvas) {
-      throw new Error(
-        "Canvas not found or you do not have permission to edit.",
-      );
-    }
-
-    canvas.elements = elements;
-    canvas.markModified("elements");
-
-    canvas.lastViewedAt = Date.now();
-
-    await canvas.save();
-    return canvas;
-  } catch (error) {
-    throw error;
-  }
+canvasSchema.statics.updateCanvas = async function (id, email, { elements }) {
+  validateId(id);
+  const validElements = validateElements(elements);
+  const user = await getUser(email);
+  const previous = requireCanvas(await this.findOneAndUpdate(accessFilter(id, user._id),
+    { $set: { elements: validElements, lastViewedAt: new Date() } }, { returnDocument: "before", runValidators: true }));
+  previous.$locals.contentChanged = JSON.stringify(previous.elements) !== JSON.stringify(validElements);
+  previous.elements = validElements;
+  return previous;
 };
-
-canvasSchema.statics.shareCanvas = async function (
-  email,
-  canvasId,
-  sharedWithEmail,
-) {
-  try {
-    const User = mongoose.model("Users");
-
-    const ownerUser = await User.findOne({ email });
-    if (!ownerUser) {
-      throw new Error("Owner user not found.");
-    }
-
-    const sharedWithUser = await User.findOne({ email: sharedWithEmail });
-    if (!sharedWithUser) {
-      throw new Error("Shared-with user not found.");
-    }
-
-    const canvas = await this.findOne({
-      _id: canvasId,
-      owner: ownerUser._id,
-    });
-
-    if (!canvas) {
-      throw new Error(
-        "Canvas not found or you do not have permission to share this canvas.",
-      );
-    }
-
-    if (canvas.owner.equals(sharedWithUser._id)) {
-      throw new Error("Cannot share canvas with its owner.");
-    }
-
-    if (!canvas.shared_with.some((id) => id.equals(sharedWithUser._id))) {
-      canvas.shared_with.push(sharedWithUser._id);
-      await canvas.save();
-    }
-
-    return canvas;
-  } catch (error) {
-    throw error;
-  }
+canvasSchema.statics.shareCanvas = async function (email, id, sharedWithEmail) {
+  validateId(id);
+  const recipientEmail = validateEmail(sharedWithEmail);
+  const owner = await getUser(email);
+  // Check ownership before looking up another account.
+  requireCanvas(await this.findOne({ _id: id, owner: owner._id }).select("_id"));
+  const recipient = await mongoose.model("Users").findOne({ email: recipientEmail });
+  if (!recipient) throw new AppError(404, "Shared-with user not found");
+  if (owner._id.equals(recipient._id)) throw new AppError(400, "Cannot share canvas with its owner");
+  return requireCanvas(await this.findOneAndUpdate({ _id: id, owner: owner._id },
+    { $addToSet: { shared_with: recipient._id } }, { returnDocument: "after", runValidators: true }));
 };
-
 canvasSchema.statics.deleteCanvas = async function (id, email) {
-  try {
-    const User = mongoose.model("Users");
-    const user = await User.findOne({ email });
-    if (!user) throw new Error("User not found");
-
-    const deletedCanvas = await this.findOneAndDelete({
-      _id: id,
-      owner: user._id,
-    });
-
-    if (!deletedCanvas) {
-      throw new Error(
-        "Canvas not found or you do not have permission to delete it.",
-      );
-    }
-
-    return deletedCanvas;
-  } catch (error) {
-    throw error;
-  }
+  validateId(id);
+  const user = await getUser(email);
+  return requireCanvas(await this.findOneAndDelete({ _id: id, owner: user._id }));
 };
-
-const Canvas = mongoose.model("Canvas", canvasSchema);
-module.exports = Canvas;
+module.exports = mongoose.model("Canvas", canvasSchema);

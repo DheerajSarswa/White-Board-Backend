@@ -1,27 +1,12 @@
-const jwt = require("jsonwebtoken");
-
-const protect = (req, res, next) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return res.status(401).json({ message: "No token, authorization denied" });
-  }
-
-  const token = authHeader.split(" ")[1];
-
-  if (!token) {
-    return res.status(401).json({ message: "No token, authorization denied" });
-  }
-
+const { verifyToken } = require("../utils/tokens");
+module.exports = (req, res, next) => {
+  const header = req.headers.authorization;
+  const match = typeof header === "string" && /^Bearer\s+(\S+)$/i.exec(header);
+  if (!match) return res.status(401).json({ success: false, message: "Authentication required" });
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    if (!decoded || !decoded.email) {
-      return res.status(401).json({ message: "Invalid token" });
-    }
-    req.email = decoded.email;
+    req.email = verifyToken(match[1]).email;
     next();
-  } catch (error) {
-    res.status(401).json({ message: "Token is not valid" });
+  } catch {
+    res.status(401).json({ success: false, message: "Your session is invalid or expired. Please log in again." });
   }
 };
-
-module.exports = protect;

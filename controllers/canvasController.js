@@ -1,5 +1,6 @@
 const Canvas = require("../models/canvasModel");
 const { getIo } = require("../utils/socketManager");
+const { sendError } = require("../utils/errors");
 
 const getAllCanvases = async (req, res) => {
   try {
@@ -12,10 +13,7 @@ const getAllCanvases = async (req, res) => {
       canvases: canvases,
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: error.message || "Server Error: Unable to fetch canvases.",
-    });
+    sendError(res, error);
   }
 };
 
@@ -26,14 +24,12 @@ const createCanvas = async (req, res) => {
     const {
       name = "Untitled Canvas",
       elements = [],
-      shared_with = [],
     } = req.body;
 
     const newCanvas = await Canvas.createCanvas({
       name,
       email,
       elements,
-      shared_with,
     });
 
     res.status(201).json({
@@ -42,10 +38,7 @@ const createCanvas = async (req, res) => {
       canvas: newCanvas,
     });
   } catch (error) {
-    res.status(400).json({
-      success: false,
-      message: error.message,
-    });
+    sendError(res, error);
   }
 };
 
@@ -61,10 +54,7 @@ const loadCanvas = async (req, res) => {
       canvas: canvas,
     });
   } catch (error) {
-    res.status(403).json({
-      success: false,
-      message: error.message,
-    });
+    sendError(res, error);
   }
 };
 
@@ -79,7 +69,7 @@ const updateCanvas = async (req, res) => {
     });
 
     const io = getIo();
-    if (io) {
+    if (io && updatedCanvas.$locals.contentChanged) {
       io.to(id).emit("canvas-updated", {
         elements: updatedCanvas.elements,
         updatedBy: email,
@@ -93,10 +83,7 @@ const updateCanvas = async (req, res) => {
       canvasId: updatedCanvas._id,
     });
   } catch (error) {
-    res.status(400).json({
-      success: false,
-      message: error.message,
-    });
+    sendError(res, error);
   }
 };
 
@@ -130,10 +117,7 @@ const shareCanvas = async (req, res) => {
       canvas,
     });
   } catch (error) {
-    res.status(400).json({
-      success: false,
-      message: error.message,
-    });
+    sendError(res, error);
   }
 };
 
@@ -144,15 +128,17 @@ const deleteCanvas = async (req, res) => {
 
     await Canvas.deleteCanvas(id, email);
 
+    const io = getIo();
+    if (io) {
+      io.to(id).emit("canvas-deleted", { canvasId: id });
+      io.in(id).socketsLeave(id);
+    }
     res.status(200).json({
       success: true,
       message: "Canvas deleted successfully",
     });
   } catch (error) {
-    res.status(403).json({
-      success: false,
-      message: error.message,
-    });
+    sendError(res, error);
   }
 };
 

@@ -10,17 +10,18 @@ const {
 } = require("../controllers/canvasController");
 
 const router = express.Router();
+const validate = require("../middlewares/validateCanvasRequest");
 
 router.get("/", protect, getAllCanvases);
 
-router.post("/", protect, createCanvas);
+router.post("/", protect, validate("create"), createCanvas);
 
-router.get("/load/:id", protect, loadCanvas);
+router.get("/load/:id", protect, validate("load"), loadCanvas);
 
-router.put("/:id", protect, updateCanvas);
+router.put("/:id", protect, validate("update"), updateCanvas);
 
-router.put("/share/:id", protect, shareCanvas);
+router.put("/share/:id", protect, validate("share"), shareCanvas);
 
-router.delete("/:id", protect, deleteCanvas);
+router.delete("/:id", protect, validate("delete"), deleteCanvas);
 
 module.exports = router;

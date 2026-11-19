@@ -124,7 +124,10 @@ This backend now supports real-time collaboration on canvases using WebSocket ro
 
 - All WebSocket connections require valid JWT authentication
 - Users can only join rooms for canvases they have access to (owner or shared with)
-- Canvas updates are validated through existing API endpoints
+- Every drawing, cursor and presence event requires an authorized room membership and a fresh database access check.
+- Socket drawing payloads are validated, but are transient broadcasts; the REST update endpoint persists canvas changes.
+- Clients may pass a Socket.IO acknowledgement callback to receive `{ success: true }` or a structured error. Existing `error` event listeners remain supported.
+- Disconnecting clients notify peers, and deleting a canvas removes its room memberships.
 
 ## Usage Flow
 

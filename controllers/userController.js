@@ -1,12 +1,13 @@
 const userModel = require("../models/userModel");
-const jwt = require("jsonwebtoken");
+const { issueToken } = require("../utils/tokens");
+const { sendError } = require("../utils/errors");
 
 const registerUser = async (req, res) => {
   try {
     const { name, email, password } = req.body;
     const newUser = await userModel.register(name, email, password);
 
-    const token = jwt.sign({ email: newUser.email }, process.env.JWT_SECRET);
+    const token = issueToken(newUser);
 
     res.status(201).json({
       success: true,
@@ -19,7 +20,7 @@ const registerUser = async (req, res) => {
       token,
     });
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    sendError(res, error);
   }
 };
 
@@ -28,7 +29,7 @@ const loginUser = async (req, res) => {
     const { email, password } = req.body;
     const newUser = await userModel.login(email, password);
 
-    const token = jwt.sign({ email: newUser.email }, process.env.JWT_SECRET);
+    const token = issueToken(newUser);
 
     res.status(201).json({
       success: true,
@@ -41,7 +42,7 @@ const loginUser = async (req, res) => {
       token,
     });
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    sendError(res, error);
   }
 };
 
@@ -57,7 +58,7 @@ const getUserProfile = async (req, res) => {
       },
     });
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    sendError(res, error);
   }
 };
 

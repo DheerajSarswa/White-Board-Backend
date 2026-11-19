@@ -1,20 +1,11 @@
-const jwt = require("jsonwebtoken");
-
+const { verifyToken } = require("../utils/tokens");
 const authenticateSocket = (socket, next) => {
-  const token = socket.handshake.auth.token;
-
-  if (!token) {
-    return next(new Error("Authentication token required"));
-  }
-
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    socket.userId = decoded.userId;
+    const decoded = verifyToken(socket.handshake.auth?.token);
     socket.email = decoded.email;
     next();
-  } catch (error) {
-    next(new Error("Invalid authentication token"));
+  } catch {
+    next(new Error("Your session is invalid or expired. Please log in again."));
   }
 };
-
 module.exports = { authenticateSocket };
