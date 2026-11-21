@@ -126,6 +126,80 @@ test("backend HTTP, MongoDB and Socket.IO regression checks", { timeout: 90000 }
     const updated={...shape,x2:250};await request("PUT",`/api/canvases/${id}`,{elements:[updated]},owner.token);await request("PUT",`/api/canvases/${id}`,{elements:[updated]},owner.token);
     await new Promise(resolve=>setTimeout(resolve,100));assert.equal(count,1);collaboratorSocket.off("canvas-updated",onUpdate);
   });
+  await t.test("live previews reach collaborators without changing the saved canvas", async () => {
+    const element = { ...shape, id: randomUUID(), x2: 300 };
+    const preview = once(collaboratorSocket, "canvas-preview");
+    assert.equal((await emit(outsiderSocket, "canvas-preview", { canvasId: id, element })).status, 403);
+    assert.equal((await emit(ownerSocket, "canvas-preview", { canvasId: id, element })).success, true);
+    assert.deepEqual((await preview)[0], { canvasId: id, sender: ownerSocket.id, element });
+    const saved = await request("GET", `/api/canvases/load/${id}`, undefined, owner.token);
+    assert.ok(saved.body.canvas.elements.every(({ id }) => id !== element.id));
+
+    const cleared = once(collaboratorSocket, "canvas-preview");
+    await emit(ownerSocket, "canvas-preview", { canvasId: id, element: null, elementId: element.id });
+    assert.equal((await cleared)[0].elementId, element.id);
+  });
+  await t.test("eraser and history previews arrive before autosave", async () => {
+    const editId = randomUUID();
+    const edit = { add: [], remove: [shape.id] };
+    const event = { canvasId: id, editId, edit };
+    const origin = `/api/canvases/${id}`;
+    assert.equal((await emit(outsiderSocket, "canvas-edit-preview", event)).status, 403);
+    assert.equal((await emit(ownerSocket, "canvas-edit-preview", { ...event, edit: { add: [], remove: [{}] } })).status, 400);
+
+    const preview = once(collaboratorSocket, "canvas-edit-preview");
+    await emit(ownerSocket, "canvas-edit-preview", event);
+    assert.deepEqual((await preview)[0], { ...event, sender: ownerSocket.id, edit: { ...edit, editId } });
+    const existing = await request("GET", `/api/canvases/load/${id}`, undefined, owner.token);
+    assert.ok(existing.body.canvas.elements.some(({ id }) => id === shape.id));
+
+    const committed = once(collaboratorSocket, "canvas-updated");
+    assert.equal((await request("PATCH", origin, { ...edit, editId }, owner.token)).status, 200);
+    const [saved] = await committed;
+    assert.equal(saved.editId, editId);
+    assert.ok(saved.elements.every(({ id }) => id !== shape.id));
+  });
+  await t.test("concurrent edits, undo, redo, and reconnect preserve collaborator changes", async () => {
+    const path = `/api/canvases/${id}`;
+    const edit = (add, remove, editId = randomUUID()) => ({ editId, add, remove });
+    const erasure = { ...shape, id: shape.id, x1: 33 };
+    const legacy = [{ ...shape }, erasure];
+    await Canvas.collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(id) },
+      { $set: { elements: legacy }, $unset: { revision: "", recentEdits: "" } },
+    );
+    const initial = await emit(collaboratorSocket, "join-canvas", id);
+    assert.equal(initial.revision, 0);
+    assert.notEqual(initial.elements[0].id, initial.elements[1].id);
+
+    const a = { ...shape, id: randomUUID(), x1: 50 };
+    const b = { ...shape, id: randomUUID(), x1: 75 };
+    const addA = edit([{ element: a }], []);
+    const addB = edit([{ element: b }], []);
+    assert.equal((await request("PATCH", path, addA, outsider.token)).status, 403);
+    assert.equal((await request("PATCH", path, edit([], [{}]), owner.token)).status, 400);
+    const results = await Promise.all([
+      request("PATCH", path, addA, owner.token),
+      request("PATCH", path, addB, collaborator.token),
+    ]);
+    assert.ok(results.every(({ status }) => status === 200), JSON.stringify(results));
+    const latest = results.sort((first, second) => second.body.revision - first.body.revision)[0].body;
+    assert.deepEqual(new Set(latest.elements.map(({ id }) => id)), new Set([...initial.elements.map(({ id }) => id), a.id, b.id]));
+
+    const received = once(collaboratorSocket, "canvas-updated");
+    const undo = await request("PATCH", path, edit([], [a.id]), owner.token);
+    assert.equal((await received)[0].revision, undo.body.revision);
+    const duplicate = await request("PATCH", path, addA, owner.token);
+    assert.equal(duplicate.body.revision, undo.body.revision);
+    assert.ok(duplicate.body.elements.every(({ id }) => id !== a.id));
+    assert.ok(duplicate.body.elements.some(({ id }) => id === b.id));
+
+    await emit(collaboratorSocket, "leave-canvas", id);
+    const redo = await request("PATCH", path, edit([{ element: a }], []), owner.token);
+    const joined = await emit(collaboratorSocket, "join-canvas", id);
+    assert.equal(joined.revision, redo.body.revision);
+    assert.deepEqual(joined.elements, redo.body.elements);
+  });
   await t.test("disconnect notifies collaborators",async()=>{
     const left=once(ownerSocket,"user-left");collaboratorSocket.disconnect();assert.equal((await left)[0].userEmail,collaborator.user.email);
   });

@@ -1,6 +1,7 @@
 const Canvas = require("../models/canvasModel");
 const { getIo } = require("../utils/socketManager");
 const { sendError } = require("../utils/errors");
+const { canvasSnapshot } = require("../utils/canvasElements");
 
 const getAllCanvases = async (req, res) => {
   try {
@@ -51,7 +52,7 @@ const loadCanvas = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      canvas: canvas,
+      canvas: { ...canvas.toObject(), ...canvasSnapshot(canvas) },
     });
   } catch (error) {
     sendError(res, error);
@@ -71,7 +72,7 @@ const updateCanvas = async (req, res) => {
     const io = getIo();
     if (io && updatedCanvas.$locals.contentChanged) {
       io.to(id).emit("canvas-updated", {
-        elements: updatedCanvas.elements,
+        ...canvasSnapshot(updatedCanvas),
         updatedBy: email,
         timestamp: new Date(),
       });
@@ -82,6 +83,25 @@ const updateCanvas = async (req, res) => {
       message: "Canvas updated successfully",
       canvasId: updatedCanvas._id,
     });
+  } catch (error) {
+    sendError(res, error);
+  }
+};
+
+const editCanvas = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updated = await Canvas.editCanvas(id, req.email, req.body);
+    const snapshot = canvasSnapshot(updated);
+    if (updated.$locals.contentChanged) {
+      getIo()?.to(id).emit("canvas-updated", {
+        ...snapshot,
+        editId: req.body.editId,
+        updatedBy: req.email,
+        timestamp: new Date(),
+      });
+    }
+    res.status(200).json({ success: true, ...snapshot });
   } catch (error) {
     sendError(res, error);
   }
@@ -147,6 +167,7 @@ module.exports = {
   createCanvas,
   loadCanvas,
   updateCanvas,
+  editCanvas,
   shareCanvas,
   deleteCanvas,
 };

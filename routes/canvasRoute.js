@@ -5,6 +5,7 @@ const {
   createCanvas,
   loadCanvas,
   updateCanvas,
+  editCanvas,
   shareCanvas,
   deleteCanvas,
 } = require("../controllers/canvasController");
@@ -19,6 +20,8 @@ router.post("/", protect, validate("create"), createCanvas);
 router.get("/load/:id", protect, validate("load"), loadCanvas);
 
 router.put("/:id", protect, validate("update"), updateCanvas);
+
+router.patch("/:id", protect, validate("load"), editCanvas);
 
 router.put("/share/:id", protect, validate("share"), shareCanvas);
 

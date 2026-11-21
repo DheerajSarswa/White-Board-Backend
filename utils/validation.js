@@ -16,12 +16,24 @@ const validateName = (name, maxLength = 200) => {
 };
 const finite = (value) => typeof value === "number" && Number.isFinite(value) && Math.abs(value) <= 1e7;
 const shapeTypes = ["LINE", "RECTANGLE", "CIRCLE", "ARROW"];
+const uuid = /^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i;
+const validateEditId = (id) => requireValid(typeof id === "string" && uuid.test(id), "Invalid edit ID");
+const validateElementId = (id) => requireValid(
+  (Number.isSafeInteger(id) && id >= 0) ||
+    (typeof id === "string" && (uuid.test(id) || /^legacy-\d+-\d+$/.test(id))),
+  "Invalid element ID",
+);
 const validateElements = (elements) => {
   requireValid(Array.isArray(elements) && elements.length <= 10000, "Elements must be an array of at most 10000 items");
+  const stringIds = new Set();
   return elements.map((element) => {
     requireValid(isRecord(element), "Invalid drawing element");
     const { id, type, stroke, fill, size, x1, y1, x2, y2, points, text } = element;
-    requireValid(Number.isSafeInteger(id) && id >= 0, "Invalid element ID");
+    validateElementId(id);
+    if (typeof id === "string") {
+      requireValid(!stringIds.has(id), "Duplicate element ID");
+      stringIds.add(id);
+    }
     requireValid([...shapeTypes, "BRUSH", "TEXT"].includes(type), "Invalid drawing tool");
     requireValid(typeof stroke === "string" && /^#[a-f\d]{6}$/i.test(stroke), "Invalid stroke color");
     requireValid(typeof size === "number" && Number.isFinite(size) && size > 0 && size <= 256, "Invalid drawing size");
@@ -43,4 +55,25 @@ const validateElements = (elements) => {
     return result;
   });
 };
-module.exports = { requireValid, isRecord, validateId, validateEmail, validateName, validateElements, finite };
+
+const validateCanvasEdit = (edit) => {
+  requireValid(isRecord(edit), "An edit object is required");
+  const { editId, add, remove } = edit;
+  validateEditId(editId);
+  requireValid(Array.isArray(add) && add.length <= 10000 &&
+    Array.isArray(remove) && remove.length <= 10000, "Invalid canvas edit");
+  const elements = validateElements(add.map((entry) => {
+    requireValid(isRecord(entry), "Invalid addition");
+    requireValid(entry.index === undefined ||
+      (Number.isSafeInteger(entry.index) && entry.index >= 0 && entry.index < 10000), "Invalid drawing index");
+    return entry.element;
+  }));
+  remove.forEach(validateElementId);
+  return {
+    editId,
+    add: elements.map((element, i) => ({ element, index: add[i].index })),
+    remove,
+  };
+};
+
+module.exports = { requireValid, isRecord, validateId, validateEmail, validateName, validateElementId, validateElements, validateEditId, validateCanvasEdit, finite };
